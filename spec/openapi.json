@@ -1,0 +1,4100 @@
+{
+ "openapi": "3.0.0",
+ "info": {
+  "title": "eMAG & FD Marketplace API",
+  "version": "4.5.2",
+  "description": "eMAG Marketplace API is developed by eMAG for Marketplace partners in order to allow them to use their own CRM's / ERP's.\n\n## Public IPs\n\nSellers integrating with the eMAG & FD Marketplace API must allow the following source IPs on any callback / webhook endpoint they expose to eMAG & Fashion Days.\n\n| IP address       | Notes              |\n|------------------|--------------------|\n| `43.131.5.30`    | Marketplace API    |\n| `91.206.37.14`   | Marketplace API    |\n| `46.174.144.128` | Marketplace API    |\n\nThis list is authoritative — please update your firewall rules whenever this section changes.\n\n**Machine-readable list:** [`public-ips.json`](public-ips.json) — poll this endpoint to automate firewall updates.\n\n## Recent changes (v4.5.2)\n\n- New resources for adding offers in campaigns:\n  - New endpoint `/campaigns/read` — read campaigns and their participation rules\n  - New endpoint `/campaign_categories/read` — read the categories eligible for a campaign\n  - New endpoint `/campaigns/{campaign_id}/eligible-offers` — read your offers eligible for a campaign\n  - New endpoint `/offers/{extId}/campaign_product_badge_timeline` — read the campaign badges active or scheduled for an offer\n- Updated constraints on /campaign_proposals/save: `stock` is now optional; `max_qty_per_order` is an integer between 0 and 255\n- Added `campaign` key (`id`, `name`) on /product_offer/read — the campaign the offer is live in\n- Added `campaign` key (`id`, `name`) on /order/read at product level — the campaign the product was ordered from\n\nThis API allows you to:\n- Send products and offers (create new, update existing, attach to existing eMAG products by EAN or part_number_key)\n- Update prices, stock, handling time and offer status\n- Save volume measurements on products\n- Read product validation status (the estimated commission per offer is available via a separate REST API)\n- Read categories, characteristics, family types, VAT rates and handling time values\n- Read and process orders (acknowledge, edit, add/remove products, storno)\n- Read order attachments and save invoices, warranties, AWBs, user manuals\n- Issue and read AWBs, download AWB as PDF (A4/A5/A6) or ZPL\n- Manage predefined AWB packages and read product volumetric data\n- Read localities, courier accounts and pickup/return addresses\n- Process return requests (RMA): read, save, count, status changes\n- Read campaigns, their eligible categories and your eligible offers, propose offers in campaigns, read campaign badge timelines and check Smart Deals price thresholds\n- Read invoice categories, invoice data and customer invoice data\n- Receive notifications via callback URLs (new orders, cancellations, new returns & status changes (New, Acknowledged & Received), AWB status, approved documentation)\n\n**Important Notes:**\n- Request body conventions: **save/write** actions wrap their payload in a `data` key (e.g. `{ \"data\": [ {...} ] }`); **read/count** actions take filters and pagination as **top-level keys** of the JSON body (e.g. `{ \"status\": 1, \"currentPage\": 1 }`) — filters wrapped in a `data` key are ignored\n- All API parameters are key-sensitive\n- Every API request must have a response with \"isError\": false. Exception: in the event of a documentation error when saving a product, the API returns \"isError\": true but the new offer is still saved and processed.\n- Maximum 4000 elements per request — exceeding it returns \"isError\": true with the message \"Maximum input vars of 4000 exceeded\"\n- Rate limits: 12 requests/second (720/minute) for orders, 3 requests/second (180/minute) cumulated for all other resources. Exceeding them returns HTTP 429 with body `{\"message\": \"API rate limit exceeded\"}` and `X-RateLimit-Limit-3second` / `X-RateLimit-Remaining-3second` headers. Invalid requests count toward the limit. Avoid scheduling requests at fixed hours (use e.g. 12:04:42 instead of 12:00:00).\n- Bulk save limit: 50 entities per request (recommended: 10-50)\n- Access: the API has IP-level filtering — sellers must provide a list of whitelisted IPs before testing; eMAG Marketplace allows API calls only from those IPs. The API user must be granted API rights.\n- Recommended: set up alerts on API responses and log all calls and responses for a 30-day period.\n\n**Platform locale & default currency:** eMAG RO / FD RO: ro_RO, RON · eMAG BG / FD BG: bg_BG, BGN until 31 Dec 2025 and EUR starting 1 Jan 2026 · eMAG HU: hu_HU, HUF.\n",
+  "contact": {
+   "name": "eMAG API Support"
+  },
+  "x-logo": {
+   "url": "/mktp-logo.svg",
+   "altText": "eMAG Marketplace Logo",
+   "href": "/"
+  }
+ },
+ "servers": [
+  {
+   "url": "https://marketplace-api.emag.ro/api-3",
+   "description": "eMAG Romania Production"
+  },
+  {
+   "url": "https://marketplace-api.emag.bg/api-3",
+   "description": "eMAG Bulgaria Production"
+  },
+  {
+   "url": "https://marketplace-api.emag.hu/api-3",
+   "description": "eMAG Hungary Production"
+  },
+  {
+   "url": "https://marketplace-ro-api.fashiondays.com/api-3",
+   "description": "FD Romania Production"
+  },
+  {
+   "url": "https://marketplace-bg-api.fashiondays.com/api-3",
+   "description": "FD Bulgaria Production"
+  }
+ ],
+ "security": [
+  {
+   "basicAuth": []
+  }
+ ],
+ "tags": [
+  {
+   "name": "Products & Offers",
+   "description": "Manage products and offers"
+  },
+  {
+   "name": "Orders",
+   "description": "Process and manage orders"
+  },
+  {
+   "name": "Shipping",
+   "description": "Handle shipping and AWB"
+  },
+  {
+   "name": "Returns",
+   "description": "Process return requests (RMA)"
+  },
+  {
+   "name": "Categories",
+   "description": "Read categories and characteristics"
+  },
+  {
+   "name": "Invoices",
+   "description": "Manage invoices"
+  },
+  {
+   "name": "Campaigns",
+   "description": "Campaigns, eligible categories and offers, campaign proposals, badge timelines and smart deals"
+  }
+ ],
+ "paths": {
+  "/product_offer/read": {
+   "post": {
+    "tags": [
+     "Products & Offers"
+    ],
+    "summary": "Read products and offers",
+    "description": "Read existing products (offers) and their status. Only your own content input on the product will be returned.\n\nFilters and pagination are sent as **top-level keys** of the JSON body (do NOT wrap them in a `data` key — filters wrapped in `data` are ignored and all offers are returned).\n\nThe `status` key returned for each offer can be:\n- `1` — Active: set by the seller when they want to sell the offer\n- `0` — Inactive / Auto-inactivated: set by the seller for temporarily unavailable offers, or set automatically (losing access in the category, losing an EAN conflict, etc.)\n- `2` — End of Life / Auto EOL: set by the seller on offers they no longer want to sell (on save, only for updates), or set automatically by the Auto EOL flow\n\nAfter reading a product, all elements previously sent are returned, along with the key `doc_errors` — not null for products rejected due to improper documentation.\n\nAn offer is available for sale only when: stock > 0, `status` = 1, `offer_validation_status.value` = 1 (valid price) and `validation_status.value` is in an availability-allowed state: 3 (Waiting for EAN approval), 9 (Approved documentation), 11 (Update awaiting approval) or 12 (Update rejected). Note: automatically translated products may not be published even with validation_status 9/11 — check `translation_validation_status` for granularity.\n\nIf the offer is live in a campaign, the response also includes a `campaign` object with the campaign `id` (eMAG internal campaign ID, integer) and `name` (eMAG internal campaign name, string).\n",
+    "operationId": "readProductOffers",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProductOfferReadFilter"
+       },
+       "example": {
+        "status": 1,
+        "currentPage": 1,
+        "itemsPerPage": 100
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        },
+        "example": {
+         "isError": false,
+         "messages": [],
+         "results": [
+          {
+           "id": 243409,
+           "part_number_key": "ES0NKBBBM",
+           "number_of_offers": 3,
+           "buy_button_rank": 1,
+           "best_offer_sale_price": 51.6477,
+           "ownership": 1,
+           "category_id": 506,
+           "brand": "Brand test",
+           "name": "Test product",
+           "part_number": "md788hc/a",
+           "sale_price": 51.6477,
+           "status": 1,
+           "campaign": {
+            "id": 243409,
+            "name": "Test campaign"
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Rate limit exceeded",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "message": {
+           "type": "string",
+           "example": "API rate limit exceeded"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/product_offer/save": {
+   "post": {
+    "tags": [
+     "Products & Offers"
+    ],
+    "summary": "Save product and offer",
+    "description": "Send a new product or update an existing offer.\n- For new products: send entire product documentation and all offer data\n- For updates: send only the offer data (id, status, sale_price, vat_id, handling_time, stock)\n\nDraft products: you can send a smaller set of data to publish a new draft product; the information is saved in the eMAG platform and the remaining details can be added at any time. Draft products are not sent to the eMAG Catalogue team for validation until the other details necessary for publishing are sent. If an EAN published on a draft is found in the eMAG catalogue, you can skip the publishing process and attach the offer directly to the existing product.\n\nNote on `isError`: in the event of a documentation error when saving a product, the response returns `isError: true` but the new offer is still saved and processed.\n",
+    "operationId": "saveProductOffer",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/ProductOfferSave"
+          },
+          "maxItems": 50
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/product_offer/count": {
+   "post": {
+    "tags": [
+     "Products & Offers"
+    ],
+    "summary": "Count products and offers",
+    "description": "Count existing products and offers based on filters.\nFilters are sent as top-level keys of the JSON body (not wrapped in a `data` key).\n",
+    "operationId": "countProductOffers",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProductOfferReadFilter"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/offer/save": {
+   "post": {
+    "tags": [
+     "Products & Offers"
+    ],
+    "summary": "Update existing offer (light API)",
+    "description": "Update existing offers by changing only offer-specific data. Cannot be used to create new offers or modify product information.\nMandatory key: id\nOptional keys: sale_price, recommended_price, min_sale_price, max_sale_price, currency_type, stock, handling_time, vat_id, status\n",
+    "operationId": "saveOffer",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/OfferSave"
+          },
+          "maxItems": 50
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/documentation/find_by_eans": {
+   "get": {
+    "tags": [
+     "Products & Offers"
+    ],
+    "summary": "Find products by EAN",
+    "description": "Search directly by EAN codes to check if products already exist on eMAG.\nEANs are passed as query parameters: `eans[]=7086812930967&eans[]=5904862975146`.\n\nLimits: up to 100 EAN codes per request (extra codes are ignored with a notification message).\nRate limits: 5 requests/second, 200 requests/minute, 5,000 requests/day.\n\nEach result contains: `eans`, `part_number_key`, `product_name`, `brand_name`, `category_name`,\n`doc_category_id`, `site_url` (not included in Fashion Days responses), `allow_to_add_offer`,\n`vendor_has_offer`, `hotness`, `product_image`.\n",
+    "operationId": "findProductsByEAN",
+    "parameters": [
+     {
+      "name": "eans[]",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "style": "form",
+      "explode": true,
+      "description": "EAN codes to search for (max 100 per request)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/measurements/save": {
+   "post": {
+    "tags": [
+     "Products & Offers"
+    ],
+    "summary": "Save volume measurements",
+    "description": "Save volume measurements on existing products. Measurement units are millimeters and grams.",
+    "operationId": "saveMeasurements",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/Measurement"
+          },
+          "maxItems": 50
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/offer_stock/{resourceId}": {
+   "patch": {
+    "tags": [
+     "Products & Offers"
+    ],
+    "summary": "Update offer stock",
+    "description": "Update only the stock of an offer. HTTP method is **PATCH** (not POST).\nThe `resourceId` parameter is the seller internal product id (the primary key identifying a product offer).\n",
+    "operationId": "updateOfferStock",
+    "parameters": [
+     {
+      "name": "resourceId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "object",
+          "properties": {
+           "stock": {
+            "type": "array",
+            "items": {
+             "$ref": "#/components/schemas/StockItem"
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/order/read": {
+   "post": {
+    "tags": [
+     "Orders"
+    ],
+    "summary": "Read orders",
+    "description": "Read orders with optional filters. By default returns the last 100 orders, but you can request up to 1000 or use pagination.\nFilters are sent as top-level keys of the JSON body (not wrapped in a `data` key).\n\nEach entry in `products` can include a `campaign` object describing the campaign the product was ordered from: `id` (integer, eMAG internal campaign ID) and `name` (string, eMAG internal campaign name).\n",
+    "operationId": "readOrders",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/OrderReadFilter"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/order/save": {
+   "post": {
+    "tags": [
+     "Orders"
+    ],
+    "summary": "Save/update order",
+    "description": "Save or update an order. You cannot create new orders through the API — only read and update them.\nYou can only edit orders when in status 2 (in progress) or 3 (prepared).\nWhen updating an order, send ALL the fields initially read.\n\nImportant:\n- Updating products by reducing their quantities is no longer possible for orders with the Online Card payment method.\n- Updating product prices is no longer available.\n- A canceled order can no longer be reactivated if more than 48 hours have passed since cancellation.\n- Removing a product: send status = 0 for the product or omit it — only while the order is in status 2 or 3, and not for Online Card orders.\n- Adding a product to an existing order: send product id (mandatory), name, status, sale price and currency.\n- Storno: a finalized order (status 4) cannot be modified — it can be fully reversed (status 4 → 5) or partially reversed with `is_storno: true`. Partial storno requires the order in status 4 and at least one product quantity reduced; negative quantities are rejected.\n",
+    "operationId": "saveOrder",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/OrderSave"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/order/count": {
+   "post": {
+    "tags": [
+     "Orders"
+    ],
+    "summary": "Count orders",
+    "description": "Count orders based on filters.\nFilters are sent as top-level keys of the JSON body (not wrapped in a `data` key).\n",
+    "operationId": "countOrders",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/OrderReadFilter"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/order/acknowledge/{orderId}": {
+   "post": {
+    "tags": [
+     "Orders"
+    ],
+    "summary": "Acknowledge order",
+    "description": "Acknowledge an order. This stops the order notification system for the mentioned order.\nOrder acknowledge is the only method of marking the order status as \"in progress\". Available only for 3P orders.\n",
+    "operationId": "acknowledgeOrder",
+    "parameters": [
+     {
+      "name": "orderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/order/{orderId}/unlock-courier": {
+   "post": {
+    "tags": [
+     "Orders"
+    ],
+    "summary": "Unlock courier for order",
+    "description": "Unlock courier selection for a specific order",
+    "operationId": "unlockCourier",
+    "parameters": [
+     {
+      "name": "orderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/order/attachments/read": {
+   "post": {
+    "tags": [
+     "Orders"
+    ],
+    "summary": "Read order attachments",
+    "description": "Read attachments (invoices, warranties, etc.) for orders.\nFilters are sent as top-level keys of the JSON body (not wrapped in a `data` key).\n",
+    "operationId": "readOrderAttachments",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "order_id": {
+          "type": "integer"
+         },
+         "order_type": {
+          "type": "integer",
+          "enum": [
+           2,
+           3
+          ],
+          "description": "2 = fulfilled by eMAG, 3 = fulfilled by seller"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/order/attachments/save": {
+   "post": {
+    "tags": [
+     "Orders"
+    ],
+    "summary": "Save order attachments",
+    "description": "Save attachments (invoices, warranties, etc.) for orders.\nFor invoices: use type = 1\nFor warranties: use type = 3 + order_product_id\n",
+    "operationId": "saveOrderAttachments",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/OrderAttachment"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/awb/read": {
+   "post": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Read AWB",
+    "description": "Read AWB (Air Waybill) information. Each result includes top-level\nkeys such as `emag_id`, `order_id`, `rma_id`, `type` (2 = fulfilled by\neMAG, 3 = fulfilled by seller), `weight`, `awb_type` (1 = delivery to\ncustomer, 2 = pickup from customer), an `awb` array (with `emag_id`,\n`awb_number`, `awb_barcode`), a `status` array (with `code`, `name`,\n`description`), a `courier` array (with `courier_account_id`,\n`courier_name`), `currency` and `cash_on_delivery` (added in v4.5.1 —\nthe amount the customer must pay on delivery).\n",
+    "operationId": "readAWB",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "emag_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "The eMAG internal barcode id"
+         },
+         "reservation_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "The eMAG internal AWB reservation id"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/awb/save": {
+   "post": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Save AWB",
+    "description": "Issue an AWB for orders or return requests",
+    "operationId": "saveAWB",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/AWBSave"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/awb/read_pdf": {
+   "get": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Read AWB PDF",
+    "description": "Download an AWB PDF file. Optional parameter awb_format sets the paper format (e.g. `awb_format=A4`).\nOnly AWBs issued via API can be read — only for them you receive the `emag_id` key, which is mandatory.\n",
+    "operationId": "readAWBPDF",
+    "parameters": [
+     {
+      "name": "emag_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 4294967295
+      },
+      "description": "The AWB's eMAG id. Must be a valid AWB in the eMAG database."
+     },
+     {
+      "name": "awb_format",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "A4",
+        "A5",
+        "A6",
+        "ZPL"
+       ]
+      },
+      "description": "The paper format on PDF download. Possible values are A4, A5, A6 and ZPL."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "PDF file",
+      "content": {
+       "application/pdf": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/awb/read_zpl": {
+   "get": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Read AWB ZPL",
+    "description": "Read an AWB in ZPL format. Returns base64 encoded content.",
+    "operationId": "readAWBZPL",
+    "parameters": [
+     {
+      "name": "emag_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Base64 encoded content of the ZPL format",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/rma/read": {
+   "post": {
+    "tags": [
+     "Returns"
+    ],
+    "summary": "Read return requests",
+    "description": "Read return requests (RMA) with optional filters.\nFilters are sent as top-level keys of the JSON body (not wrapped in a `data` key).\n",
+    "operationId": "readRMA",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RMAReadFilter"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/rma/save": {
+   "post": {
+    "tags": [
+     "Returns"
+    ],
+    "summary": "Save/update return request",
+    "description": "Save or update a return request (RMA).\n\nStatus change permissions — allowed `request_status` transitions (actual → new):\n| Actual status | Allowed new statuses |\n|---|---|\n| 2 - New | 2 - New, 3 - Acknowledged, 5 - Canceled |\n| 3 - Acknowledged | 3 - Acknowledged, 5 - Canceled, 6 - Received |\n| 4 - Rejected | 4 - Rejected (terminal) |\n| 5 - Canceled | 5 - Canceled (terminal) |\n| 6 - Received | 4 - Rejected, 6 - Received, 7 - Finalized |\n| 7 - Finalized | 7 - Finalized (terminal) |\n\nSome statuses were left out by design; these should not be used in any seller implementation.\n",
+    "operationId": "saveRMA",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/RMASave"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/rma/count": {
+   "post": {
+    "tags": [
+     "Returns"
+    ],
+    "summary": "Count return requests",
+    "description": "Count return requests based on filters.\nFilters are sent as top-level keys of the JSON body (not wrapped in a `data` key).\n",
+    "operationId": "countRMA",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RMAReadFilter"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/category/read": {
+   "post": {
+    "tags": [
+     "Categories"
+    ],
+    "summary": "Read categories",
+    "description": "Read categories, characteristics and family_types.\nReading categories without parameters will generate a response containing the first 100 categories.\nWhen passing a category id, the API will return the category name and the list of available characteristics.\n",
+    "operationId": "readCategories",
+    "parameters": [
+     {
+      "name": "language",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "EN",
+        "RO",
+        "HU",
+        "BG",
+        "PL",
+        "GR",
+        "DE"
+       ]
+      },
+      "description": "Language for category names (default: platform language). Available languages: EN, RO, HU, BG, PL, GR and DE (e.g. ?language=en)."
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "integer",
+          "description": "Category eMAG id"
+         },
+         "currentPage": {
+          "type": "integer",
+          "description": "Current page displayed"
+         },
+         "itemsPerPage": {
+          "type": "integer",
+          "description": "Number of categories per page"
+         },
+         "valuesCurrentPage": {
+          "type": "integer",
+          "description": "Current page for characteristic values"
+         },
+         "valuesPerPage": {
+          "type": "integer",
+          "description": "Items per page for characteristic values"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/category/count": {
+   "post": {
+    "tags": [
+     "Categories"
+    ],
+    "summary": "Count categories",
+    "description": "Count categories",
+    "operationId": "countCategories",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/vat/read": {
+   "post": {
+    "tags": [
+     "Categories"
+    ],
+    "summary": "Read VAT rates",
+    "description": "Read available VAT rates and their corresponding IDs",
+    "operationId": "readVAT",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/handling_time/read": {
+   "post": {
+    "tags": [
+     "Categories"
+    ],
+    "summary": "Read handling time values",
+    "description": "Read available handling time values",
+    "operationId": "readHandlingTime",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/locality/read": {
+   "post": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Read localities",
+    "description": "Read localities (cities, regions) for AWB issuing.\nWhen not using the country filter, the API responds only with localities from the platform country.\n\nResponse shape — each locality has:\n- `emag_id` (integer) — the id of the locality\n- `name` / `name_latin` (string, 0-60)\n- `region1`..`region4` / `region1_latin`..`region4_latin` (string, 0-60) — region names\n- `geoid` (integer) — geographic id of the location\n- `modified` (Y-m-d H:i:s) — last modification date\n- `zipcode` (string, 0-10) — the zipcode of the locality\n- `country_code` (alpha-2 string)\n- `iso2` (string) — combination between the country's code and the county's code\n",
+    "operationId": "readLocalities",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "emag_id": {
+          "type": "integer"
+         },
+         "name": {
+          "type": "string",
+          "maxLength": 60
+         },
+         "region2": {
+          "type": "string",
+          "maxLength": 60
+         },
+         "country_code": {
+          "type": "string",
+          "enum": [
+           "RO",
+           "BG",
+           "HU",
+           "PL",
+           "EL",
+           "DE"
+          ]
+         },
+         "modified": {
+          "type": "string",
+          "format": "date-time"
+         },
+         "itemsPerPage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+         },
+         "currentPage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/locality/count": {
+   "post": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Count localities",
+    "description": "Count localities based on filters",
+    "operationId": "countLocalities",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "emag_id": {
+          "type": "integer"
+         },
+         "name": {
+          "type": "string",
+          "maxLength": 60
+         },
+         "modified": {
+          "type": "string",
+          "format": "date-time"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/courier_accounts/read": {
+   "post": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Read courier accounts",
+    "description": "Read available courier accounts for AWB issuing.\n\nResponse shape — each account has:\n- `account_id` (integer)\n- `account_display_name` (string, 0-60)\n- `courier_account_type` (integer) — 1 = RMA, 2 = Order, 3 = RMA & Order, 4 = Non Marketplace\n- `courier_name` (string)\n- `courier_account_properties` (array of integers) — 0 = Regular (HD), 2 = Lockers, 6 = Offices, 8 = Crossborder, 9 = BPO\n- `created` (Y-m-d H:i:s)\n- `status` (integer) — 1 = Active, 0 = Inactive\n- `pickup_country_code` (string, alpha-2)\n",
+    "operationId": "readCourierAccounts",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/addresses/read": {
+   "post": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Read addresses",
+    "description": "Read pickup/return addresses for AWB issuing.\n\nResponse shape — each address has:\n- `address_id` (string, 0-21)\n- `country_id` (integer)\n- `country_code` (alpha-2 string, 0-45)\n- `address_type_id` (integer) — 1 = return, 2 = pickup, 3 = invoice (HQ), 4 = delivery estimates\n- `locality_id` (integer)\n- `suburb` (string, county, 0-200)\n- `city` (string, 0-300)\n- `address` (string — street, number, etc., 0-65535)\n- `zipcode` (string, 0-100)\n- `quarter` (string, 0-200)\n- `floor` (string, 0-100)\n- `is_default` (boolean) — true if address is set as default for pickup/return\n",
+    "operationId": "readAddresses",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/awb/package/read": {
+   "post": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Read predefined packages",
+    "description": "Read predefined package dimensions (label, length, width, height, weight)\nused when issuing AWBs. You can fill packages manually on /awb/save or\nrely on the predefined ones managed via this resource.\n",
+    "operationId": "readAWBPackages",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/awb/package/save": {
+   "post": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Save predefined packages",
+    "description": "Save or edit predefined package dimensions. To modify a package or\nchange the default package, provide all packages with all keys and\nchange the values where needed. Setting `is_default: true` automatically\nflips the previous default to false.\n",
+    "operationId": "saveAWBPackages",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/AWBPackage"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/order/volumetry/read": {
+   "post": {
+    "tags": [
+     "Shipping"
+    ],
+    "summary": "Read product volumetries on an order",
+    "description": "Read volumetric data (weight, length, width, height) for each distinct\nproduct on an order, useful when populating the `packages` key on\n/awb/save. Volumetric data is returned only for orders with quantity 1\nper product and a single parcel or envelope.\n\nResponse shape: `order_id`, `type`, and a `volumetric_data` array with\none entry per distinct product: `product_id`, `weight`, `length`,\n`width`, `height`.\n",
+    "operationId": "readOrderVolumetry",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/OrderVolumetryReadFilter"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/campaigns/read": {
+   "post": {
+    "tags": [
+     "Campaigns"
+    ],
+    "summary": "Read campaigns",
+    "description": "Read the existing campaigns and their properties, including the participation rules an offer must meet in order to be proposed in the campaign.\n\nFilters and pagination are sent as **top-level keys** of the JSON body (not wrapped in a `data` key).\n\nResponse shape — each campaign has:\n- `id` (integer) — eMAG internal campaign ID\n- `name` (string) — eMAG internal campaign name\n- `startDate` (string, ISO 8601) — campaign start date and time\n- `endDate` (string, ISO 8601) — campaign end date and time\n- `endPreparationDate` (string, ISO 8601) — deadline for submitting offers\n- `status` (integer) — 1 = active, 0 = inactive\n- `type` (integer) — 1 = Black Friday (Black Friday campaign), 2 = Discount (discount-based campaign), 3 = Voucher (voucher-based campaign), 4 = Multi deals (Multiple Deals campaign)\n- `participationRules` (object) — campaign participation rules:\n  - `minAllowedDiscount` (string) — minimum allowed discount type (e.g. \"min. 5% or 50 RON from CMMP depending on category\")\n  - `restrictedCategories` (boolean) — true = restricted categories only (read them with /campaign_categories/read), false = all categories\n  - `geniusOffersOnly` (boolean) — true = Genius offers only, false = all offers\n  - `minStock` (integer, can be null) — minimum required stock\n  - `maxHandlingTime` (integer, can be null) — maximum handling time in days\n  - `minOfferPrice` (decimal, can be null) — minimum offer price without VAT\n  - `maxOfferPrice` (decimal, can be null) — maximum offer price without VAT\n",
+    "operationId": "readCampaigns",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CampaignReadFilter"
+       },
+       "example": {
+        "status": 1,
+        "campaignType": 2,
+        "currentPage": 1
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        },
+        "example": {
+         "isError": false,
+         "messages": [],
+         "results": [
+          {
+           "id": 243409,
+           "name": "Test campaign",
+           "startDate": "2026-06-27T09:59:56+03:00",
+           "endDate": "2026-07-31T09:59:56+03:00",
+           "endPreparationDate": "2026-06-27T00:00:00+03:00",
+           "status": 1,
+           "type": 2,
+           "participationRules": {
+            "minAllowedDiscount": "min. 5% or 50 RON from CMMP depending on category",
+            "restrictedCategories": false,
+            "geniusOffersOnly": false,
+            "minStock": 10,
+            "maxHandlingTime": 3,
+            "minOfferPrice": 50,
+            "maxOfferPrice": 500
+           }
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/campaign_categories/read": {
+   "post": {
+    "tags": [
+     "Campaigns"
+    ],
+    "summary": "Read eligible categories for a campaign",
+    "description": "Read the list of categories eligible for a specific campaign.\n\nThis endpoint is relevant only when `participationRules.restrictedCategories` = true for the campaign (see /campaigns/read). If `restrictedCategories` = false, all categories are eligible.\n\nPagination is sent as **top-level keys** of the JSON body (not wrapped in a `data` key).\n\nResponse shape — each category has:\n- `id` (integer) — category eMAG id\n- `scmId` (integer) — category eMAG SCM id\n- `name` (string) — category name\n- `parentId` (integer) — id of the parent category\n- `parentScmId` (integer) — SCM id of the parent category\n- `parentName` (string) — name of the parent category\n",
+    "operationId": "readCampaignCategories",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Pagination"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        },
+        "example": {
+         "isError": false,
+         "messages": [],
+         "results": [
+          {
+           "id": 604,
+           "scmId": 1234,
+           "name": "Laptops",
+           "parentId": 12,
+           "parentScmId": 132,
+           "parentName": "IT & Electronics"
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/campaigns/{campaign_id}/eligible-offers": {
+   "get": {
+    "tags": [
+     "Campaigns"
+    ],
+    "summary": "Read eligible offers for a campaign",
+    "description": "Read the list of your offers eligible for a specific campaign.\n\nResults are paginated using a **cursor-based** mechanism (not `currentPage` / `itemsPerPage`): use the next-page URL returned in the response to fetch subsequent pages, or pass the `ext_id` of the last offer received as `lastId`.\n\nResponse shape — `results` array, each offer has:\n- `product_name` (string) — product name\n- `category` (integer) — category id\n- `brand` (string) — brand name\n- `pnk` (string) — eMAG product unique key (part_number_key)\n- `product_code` (string) — seller product code\n- `ext_id` (integer) — seller internal product id; the primary key for identifying a product offer\n- `max_product_performance` (integer) — best performance indicator for the product: 1 = SuperHot, 2 = Hot, 3 = Regular, 4 = Cold, 5 = SuperCold\n- `current_price` (decimal) — current offer price without VAT\n- `cmmp` (decimal) — smallest price in the last 30 days. The reference date is the campaign start date if the campaign has not started, or the current date if the campaign has already started. Available only for Discount or Black Friday campaigns\n- `max_campaign_price` (decimal) — the maximum price at which the offer can be added in the campaign. If null, there is no price restriction (Voucher campaigns have no price restriction)\n- `current_stock` (integer) — available stock\n- `current_commission_no_discount` (decimal) — current commission rate without discount (%)\n- `emag_support` (list of objects) — eMAG financial support tiers:\n  - `emag_support_pct` (decimal) — percentage of eMAG financial support from the discount offered by the seller\n  - `min_discount_pct` (decimal) — minimum discount percentage (price discount or voucher discount) required to qualify for this tier\n  - `emag_support_value` (decimal) — eMAG support value in platform currency\n- `campaign_id` (integer) — eMAG internal campaign ID\n- `campaign_type` (string) — campaign type: discount or voucher\n",
+    "operationId": "readCampaignEligibleOffers",
+    "parameters": [
+     {
+      "name": "campaign_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "eMAG internal campaign ID",
+      "example": 2097
+     },
+     {
+      "name": "pageSize",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 50
+      },
+      "description": "Number of results per page",
+      "example": 50
+     },
+     {
+      "name": "lastId",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Cursor for pagination — the `ext_id` of the last offer from the previous response",
+      "example": 10178
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        },
+        "example": {
+         "isError": false,
+         "messages": [],
+         "results": [
+          {
+           "product_name": "Samsung Galaxy S24",
+           "category": 123,
+           "brand": "Samsung",
+           "pnk": "ES0NKBBBM",
+           "product_code": "SGS24-BLK",
+           "ext_id": 5678901,
+           "max_product_performance": 1,
+           "current_price": 2999,
+           "cmmp": 2850,
+           "max_campaign_price": 2999,
+           "current_stock": 45,
+           "current_commission_no_discount": 8.5,
+           "emag_support": [
+            {
+             "emag_support_pct": 30,
+             "min_discount_pct": 15,
+             "emag_support_value": 12.96
+            }
+           ],
+           "campaign_id": 2097,
+           "campaign_type": "discount"
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/campaign_proposals/save": {
+   "post": {
+    "tags": [
+     "Campaigns"
+    ],
+    "summary": "Save campaign proposals",
+    "description": "Propose offers in campaigns.\n\nTo find what you can propose, read the campaigns and their participation rules (/campaigns/read), the eligible categories when the campaign has restricted categories (/campaign_categories/read) and your eligible offers (/campaigns/{campaign_id}/eligible-offers).\n\nRequired keys per proposal: `id`, `sale_price` and `campaign_id`. Some keys are required depending on the campaign type: `max_qty_per_order` is mandatory for stock-in-site campaigns, `date_intervals` (with each interval's `start_date`, `end_date`, `voucher_discount` and `index`) is required for MultiDeals campaigns, and `voucher_discount` is optional or required depending on the campaign type.\n",
+    "operationId": "saveCampaignProposals",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "data": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/CampaignProposal"
+          },
+          "maxItems": 50
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api-3/smart-deals-price-check": {
+   "get": {
+    "tags": [
+     "Campaigns"
+    ],
+    "summary": "Smart Deals price check",
+    "description": "Check the price required to qualify for the Smart Deals badge.\nBy providing the productId, the system returns the target price needed for eligibility.\n",
+    "operationId": "smartDealsPriceCheck",
+    "parameters": [
+     {
+      "name": "productId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Product offer ID"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/offers/{extId}/campaign_product_badge_timeline": {
+   "get": {
+    "tags": [
+     "Campaigns"
+    ],
+    "summary": "Read campaign product badge timeline",
+    "description": "Read the campaign badge timeline for a specific offer. Returns all campaign badges (e.g. Black Friday, Genius Days) currently active or scheduled for the offer. If no badges are found, `results` is returned empty.\n\nSupported only for eMAG platforms (RO, BG, HU).\n\nResponse shape — `results` array, each badge has:\n- `id` (integer) — eMAG internal ID of the campaign the badge belongs to\n- `name` (string) — campaign name\n- `labelText` (string) — badge text displayed to the buyer on the product page\n- `startDate` (string, ISO 8601) — date and time from which the badge becomes visible on the offer\n- `endDate` (string, ISO 8601) — date and time at which the badge is no longer visible on the offer\n",
+    "operationId": "readCampaignProductBadgeTimeline",
+    "parameters": [
+     {
+      "name": "extId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Seller internal product ID. The same identifier used across all seller APIs.",
+      "example": 555555
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        },
+        "example": {
+         "isError": false,
+         "messages": [],
+         "results": [
+          {
+           "id": 111,
+           "name": "Genius Deals",
+           "labelText": "Genius Days",
+           "startDate": "2027-08-01T00:00:00+03:00",
+           "endDate": "2027-08-16T23:59:59+03:00"
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api-3/invoice/categories": {
+   "post": {
+    "tags": [
+     "Invoices"
+    ],
+    "summary": "Read invoice categories",
+    "description": "Read all invoice categories. Response payload is a collection of category records, each containing:\n- `category` (string) — invoice type, e.g. `FC`\n- `name` (string) — invoice type name, e.g. `Commission`\n",
+    "operationId": "readInvoiceCategories",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api-3/invoice/read": {
+   "post": {
+    "tags": [
+     "Invoices"
+    ],
+    "summary": "Read invoice data",
+    "description": "Read invoice data. Without parameters, returns the last 100 invoices.\n\nResponse shape:\n- `total_results` (integer) — number of invoices identified\n- `invoices[]`:\n  - `category` (string), `name` (string), `number` (string), `date` (YYYY-mm-dd), `is_storno` (0/1)\n  - `supplier`: `name`, `register_number`, `cif`, `tax_code`, `social_capital`, `iban`, `bank`, `address`, `phone_number`\n  - `customer`: `name`, `register_number`, `cif`, `tax_code`, `iban`, `bank`, `country`, `address`\n  - `lines[]`: `product_name`, `unit_of_measure`, `quantity`, `unit_price`, `vat_rate`, `value`, `vat_value`\n  - `payment_term`, `total_without_vat`, `total_vat_value`, `total_with_vat`, `currency`\n",
+    "operationId": "readInvoices",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "category": {
+          "type": "string"
+         },
+         "number": {
+          "type": "string"
+         },
+         "date_start": {
+          "type": "string",
+          "format": "date"
+         },
+         "date_end": {
+          "type": "string",
+          "format": "date"
+         },
+         "itemsPerPage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+         },
+         "currentPage": {
+          "type": "integer"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api-3/customer-invoice/read": {
+   "post": {
+    "tags": [
+     "Invoices"
+    ],
+    "summary": "Read customer invoice data",
+    "description": "Read customer invoice data. Without parameters, returns the last 100 invoices.\n\nResponse shape:\n- `total_results` (integer)\n- `invoices[]`:\n  - `category` (`normal`|`storno`), `order_id`, `number`, `date` (YYYY-mm-dd), `is_storno` (0/1), `reversal_for` (string — invoice cancelled through this one)\n  - `supplier`: `name`, `register_number`, `cif`, `tax_code`, `social_capital`, `iban`, `bank`, `country`, `address`\n  - `customer`: `name`, `register_number`, `cif`, `tax_code`, `iban`, `bank`, `country`, `address`\n  - `lines[]`: `product_name`, `unit_of_measure`, `quantity`, `unit_price`, `vat_rate`, `value`, `vat_value`\n  - `total_without_vat`, `total_vat_value`, `total_with_vat`, `currency`\n",
+    "operationId": "readCustomerInvoices",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "category": {
+          "type": "string",
+          "enum": [
+           "normal",
+           "storno"
+          ]
+         },
+         "order_id": {
+          "type": "integer"
+         },
+         "number": {
+          "type": "string"
+         },
+         "date_start": {
+          "type": "string",
+          "format": "date"
+         },
+         "date_end": {
+          "type": "string",
+          "format": "date"
+         },
+         "itemsPerPage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+         },
+         "currentPage": {
+          "type": "integer"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "securitySchemes": {
+   "basicAuth": {
+    "type": "http",
+    "scheme": "basic",
+    "description": "Basic Authentication using username and password.\nThe credentials should be base64 encoded as: base64(username:password)\nThe user must be granted API rights in order to access the API.\nThe API also has IP-level filtering: sellers must provide a list of whitelisted IPs before testing — API calls are allowed only from those IPs.\n"
+   }
+  },
+  "schemas": {
+   "ApiResponse": {
+    "type": "object",
+    "required": [
+     "isError"
+    ],
+    "properties": {
+     "isError": {
+      "type": "boolean",
+      "description": "Boolean value representing response status. Must be false for successful requests."
+     },
+     "messages": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Messages included in the response, like error messages, etc."
+     },
+     "results": {
+      "type": "array",
+      "items": {},
+      "description": "Results included in the response, mostly when reading resources."
+     }
+    }
+   },
+   "Pagination": {
+    "type": "object",
+    "properties": {
+     "currentPage": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Set current page displayed"
+     },
+     "itemsPerPage": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 100,
+      "description": "Set number of items to be displayed in one page. Maximum is 100."
+     }
+    }
+   },
+   "ProductOfferReadFilter": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/Pagination"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4294967295,
+        "description": "Displays the details for the corresponding ext_id"
+       },
+       "status": {
+        "type": "integer",
+        "enum": [
+         0,
+         1
+        ],
+        "description": "Returns only the offers with this status. 1 = active, 0 = inactive. Note: only 0 and 1 are supported as filter values; offers may still carry status 2 (End of Life) in read responses. Send this filter as a top-level key of the request body."
+       },
+       "part_number": {
+        "type": "string",
+        "description": "Displays the details for the corresponding part_number"
+       },
+       "part_number_key": {
+        "type": "string",
+        "description": "Displays the details for the corresponding part_number_key"
+       },
+       "general_stock": {
+        "type": "integer",
+        "description": "Returns only offers with numerical general_stock between 0 and the input"
+       },
+       "estimated_stock": {
+        "type": "integer",
+        "description": "Returns only offers with numerical estimated_stock between 0 and the input"
+       },
+       "offer_validation_status": {
+        "type": "integer",
+        "enum": [
+         1,
+         2
+        ],
+        "description": "1 = Saleable, 2 = Invalid price"
+       },
+       "validation_status": {
+        "type": "integer",
+        "enum": [
+         1,
+         2,
+         3,
+         4,
+         5,
+         6,
+         8,
+         9,
+         10,
+         11,
+         12
+        ],
+        "description": "Returns only the results with this validation status. 1 = Awaiting MKTP validation, 2 = Awaiting Brand validation, 3 = Awaiting EAN validation, 4 = Awaiting Documentation Validation, 5 = Rejected Brand, 6 = Rejected EAN, 8 = Rejected Documentation, 9 = Approved Documentation, 10 = Blocked, 11 = Documentation update validation pending, 12 = Update rejected"
+       },
+       "translation_validation_status": {
+        "type": "integer",
+        "enum": [
+         1,
+         2,
+         3,
+         4,
+         5,
+         6,
+         8,
+         9,
+         10,
+         11,
+         12,
+         13,
+         14,
+         15,
+         16,
+         17
+        ],
+        "description": "Returns only the results with this translation validation status. 1 = Awaiting MKTP validation, 2 = Awaiting Brand validation, 3 = Awaiting EAN validation, 4 = Awaiting Documentation Validation, 5 = Rejected Brand, 6 = Rejected EAN, 8 = Rejected Documentation, 9 = Approved Documentation, 10 = Blocked, 11 = Documentation update validation pending, 12 = Update rejected, 13 = Waiting for salable offer, 14 = Unsuccessful translation, 15 = Translation in progress, 16 = Translation pending, 17 = Partial translation"
+       }
+      }
+     }
+    ]
+   },
+   "ProductOfferSave": {
+    "type": "object",
+    "description": "Product + offer payload for product_offer/save.\n- When sending a NEW product, the product documentation keys are also mandatory: category_id, name, part_number, brand (plus warranty/ean when the category requires them).\n- When UPDATING an existing offer, the mandatory keys are: id, status, sale_price, vat_id, handling_time, stock — send only the offer, without the documentation.\n",
+    "required": [
+     "id",
+     "status",
+     "sale_price",
+     "vat_id",
+     "handling_time",
+     "stock"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16777215,
+      "description": "Seller internal product id. Primary key for identifying a product offer."
+     },
+     "category_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "Product category eMAG id"
+     },
+     "vendor_category_id": {
+      "type": "integer",
+      "description": "Seller internal category id"
+     },
+     "part_number_key": {
+      "type": "string",
+      "description": "eMAG part_number_key. Used for attaching a product offer to an existing product.\nIf you want to create new product, don't set this key.\n"
+     },
+     "source_language": {
+      "type": "string",
+      "enum": [
+       "en_GB",
+       "ro_RO",
+       "pl_PL",
+       "bg_BG",
+       "hu_HU",
+       "de_DE",
+       "it_IT",
+       "fr_FR",
+       "es_ES",
+       "nl_NL",
+       "cs_CZ",
+       "ru_RU",
+       "el_GR",
+       "lt_LT",
+       "sk_SK",
+       "uk_UA"
+      ],
+      "description": "The language of the product content input. Defaults per platform: ro_RO on eMAG RO, bg_BG on eMAG BG, hu_HU on eMAG HU."
+     },
+     "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "Product name"
+     },
+     "part_number": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 25,
+      "description": "Manufacturer unique identifier of the product. Important: spaces, comma and semicolon are automatically stripped (e.g. \"part number;\" is saved as \"partnumber\")."
+     },
+     "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16777215,
+      "description": "Product description. Can contain basic HTML tags."
+     },
+     "brand": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "Brand name"
+     },
+     "force_images_download": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "default": 0,
+      "description": "0 = images downloaded only if link changed, 1 = force download"
+     },
+     "images": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "url"
+       ],
+       "properties": {
+        "display_type": {
+         "type": "integer",
+         "enum": [
+          0,
+          1,
+          2
+         ],
+         "default": 0,
+         "description": "1 = main image, 2 = secondary image, 0 = other images"
+        },
+        "url": {
+         "type": "string",
+         "format": "uri",
+         "minLength": 1,
+         "maxLength": 1024,
+         "description": "Seller image URL. Max 6000px x 6000px and 8 Mb. JPG, JPEG or PNG."
+        }
+       }
+      }
+     },
+     "images_overwrite": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "1 = overwrite images, 0 = append images"
+     },
+     "characteristics": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "id",
+        "value"
+       ],
+       "properties": {
+        "id": {
+         "type": "integer",
+         "minimum": 1,
+         "maximum": 65535,
+         "description": "Characteristic eMAG id"
+        },
+        "value": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 255,
+         "description": "Characteristic value"
+        },
+        "tag": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 255,
+         "description": "Characteristic tag value (for characteristics with tags)"
+        }
+       }
+      }
+     },
+     "family": {
+      "type": "object",
+      "required": [
+       "id"
+      ],
+      "properties": {
+       "id": {
+        "type": "integer",
+        "description": "Family id. Required. Set to 0 to remove product from family"
+       },
+       "name": {
+        "type": "string",
+        "description": "Seller Family name. Required if family id is not equal to 0."
+       },
+       "family_type_id": {
+        "type": "integer",
+        "description": "eMAG Family type id. Required if family id is not equal to 0."
+       }
+      }
+     },
+     "url": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Product URL on the seller website"
+     },
+     "warranty": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "description": "The warranty offered in months. Required/Optional based on category (see is_warranty_mandatory on category/read). Default value: 0 (no warranty) when optional."
+     },
+     "ean": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "minLength": 6,
+       "maxLength": 14,
+       "pattern": "^\\d+$"
+      },
+      "description": "Product barcode identifier (EAN-8, EAN-13, UPC-A, UPC-E, JAN, ISBN-10, ISBN-13, ISSN, ISMN-10, ISMN-13, GTIN-14). Required/Optional based on category (see is_ean_mandatory on category/read)."
+     },
+     "attachments": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "url"
+       ],
+       "properties": {
+        "id": {
+         "type": "integer",
+         "minimum": 1,
+         "maximum": 4294967295,
+         "description": "Seller attachment internal id"
+        },
+        "url": {
+         "type": "string",
+         "format": "uri",
+         "minLength": 1,
+         "maxLength": 1024,
+         "description": "Seller attachment URL. Max 10 Mb."
+        }
+       }
+      }
+     },
+     "status": {
+      "type": "integer",
+      "enum": [
+       0,
+       1,
+       2
+      ],
+      "description": "Seller offer status. 2 = End of Life, 1 = active, 0 = inactive. Note: status = 2 should be used only when updating an existing offer, not when creating one."
+     },
+     "sale_price": {
+      "type": "number",
+      "format": "float",
+      "minimum": 0,
+      "exclusiveMinimum": true,
+      "description": "Seller offer sale price without VAT. Up to four decimals."
+     },
+     "recommended_price": {
+      "type": "number",
+      "format": "float",
+      "minimum": 0,
+      "exclusiveMinimum": true,
+      "description": "Recommended retail price before discount, without VAT. Must be greater than sale_price."
+     },
+     "min_sale_price": {
+      "type": "number",
+      "format": "float",
+      "minimum": 0,
+      "exclusiveMinimum": true,
+      "description": "Seller's min offer sale price without VAT. Required on first product save."
+     },
+     "max_sale_price": {
+      "type": "number",
+      "format": "float",
+      "minimum": 0,
+      "exclusiveMinimum": true,
+      "description": "Seller's max offer sale price without VAT. Required on first product save. Must be greater than min_sale_price."
+     },
+     "currency_type": {
+      "type": "string",
+      "enum": [
+       "EUR",
+       "PLN"
+      ],
+      "maxLength": 3,
+      "description": "Offer currency. Only send if different from local Marketplace currency."
+     },
+     "stock": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/StockItem"
+      },
+      "description": "Offer available quantity array"
+     },
+     "handling_time": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/HandlingTimeItem"
+      },
+      "description": "Handling time array. If no array is sent, products are shipped the same day."
+     },
+     "supply_lead_time": {
+      "type": "integer",
+      "enum": [
+       2,
+       3,
+       5,
+       7,
+       14,
+       30,
+       60,
+       90,
+       120
+      ],
+      "default": 14,
+      "description": "Number of days needed to restock the product"
+     },
+     "start_date": {
+      "type": "string",
+      "format": "date",
+      "description": "For new offers: date your offer will be available from.\nFor updates: schedules value updates for sale_price, recommended_price, stock, handling_time, vat_id, warranty, status.\nDate can be as far as 60 days in the future (cannot be earlier than tomorrow).\n"
+     },
+     "vat_id": {
+      "type": "integer",
+      "description": "Seller offer VAT rate id. Use /vat/read to display possible values."
+     },
+     "emag_club": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "default": 1,
+      "description": "Indicates if offer should be available in eMAG Genius program. 1 = yes, 0 = no"
+     },
+     "safety_information": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16777215,
+      "description": "GPSR safety information. Warnings contained in the product."
+     },
+     "manufacturer": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+       "type": "object",
+       "required": [
+        "name",
+        "address",
+        "email"
+       ],
+       "properties": {
+        "name": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200,
+         "description": "Manufacturer name"
+        },
+        "address": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 500,
+         "description": "Manufacturer address"
+        },
+        "email": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 100,
+         "format": "email",
+         "description": "Manufacturer email"
+        }
+       }
+      },
+      "description": "GPSR manufacturer information. Maximum 10 sets."
+     },
+     "eu_representative": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+       "type": "object",
+       "required": [
+        "name",
+        "address",
+        "email"
+       ],
+       "properties": {
+        "name": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200,
+         "description": "EU representative name"
+        },
+        "address": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 500,
+         "description": "EU representative address"
+        },
+        "email": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 100,
+         "format": "email",
+         "description": "EU representative email"
+        }
+       }
+      },
+      "description": "GPSR EU representative information. Maximum 10 sets."
+     },
+     "green_tax": {
+      "type": "number",
+      "format": "float",
+      "minimum": 0,
+      "description": "The value for Green tax that will be displayed on site. This value includes VAT.\nAvailable only for eMAG RO platform. Up to four decimals.\n"
+     }
+    }
+   },
+   "OfferSave": {
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "description": "Seller internal product id (mandatory)"
+     },
+     "sale_price": {
+      "type": "number",
+      "format": "float",
+      "description": "Seller offer sale price without VAT"
+     },
+     "recommended_price": {
+      "type": "number",
+      "format": "float",
+      "description": "Recommended retail price before discount, without VAT"
+     },
+     "min_sale_price": {
+      "type": "number",
+      "format": "float",
+      "description": "Seller's min offer sale price without VAT"
+     },
+     "max_sale_price": {
+      "type": "number",
+      "format": "float",
+      "description": "Seller's max offer sale price without VAT"
+     },
+     "currency_type": {
+      "type": "string",
+      "enum": [
+       "EUR",
+       "PLN"
+      ],
+      "description": "Offer currency"
+     },
+     "stock": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/StockItem"
+      }
+     },
+     "handling_time": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/HandlingTimeItem"
+      }
+     },
+     "vat_id": {
+      "type": "integer",
+      "description": "Seller offer VAT rate id"
+     },
+     "status": {
+      "type": "integer",
+      "enum": [
+       0,
+       1,
+       2
+      ],
+      "description": "Seller offer status. 2 = End of Life, 1 = active, 0 = inactive. Note: status = 2 should be used only for updates (this endpoint only updates existing offers)."
+     }
+    }
+   },
+   "StockItem": {
+    "type": "object",
+    "required": [
+     "warehouse_id",
+     "value"
+    ],
+    "properties": {
+     "warehouse_id": {
+      "type": "integer",
+      "description": "The id of the warehouse. Use warehouse_id=1 for only one warehouse."
+     },
+     "value": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Offer available quantity"
+     }
+    }
+   },
+   "HandlingTimeItem": {
+    "type": "object",
+    "required": [
+     "warehouse_id",
+     "value"
+    ],
+    "properties": {
+     "warehouse_id": {
+      "type": "integer",
+      "description": "The id of the warehouse. Use warehouse_id=1 for only one warehouse."
+     },
+     "value": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "default": 0,
+      "description": "Handling time in number of days counted from the day the order was received. 0 = shipped same day."
+     }
+    }
+   },
+   "Measurement": {
+    "type": "object",
+    "required": [
+     "id",
+     "length",
+     "width",
+     "height",
+     "weight"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16777215,
+      "description": "Seller internal product id"
+     },
+     "length": {
+      "type": "number",
+      "format": "float",
+      "minimum": 0,
+      "maximum": 999999,
+      "description": "The length of the product in millimeters (mm). Up to two decimals."
+     },
+     "width": {
+      "type": "number",
+      "format": "float",
+      "minimum": 0,
+      "maximum": 999999,
+      "description": "The width of the product in millimeters (mm). Up to two decimals."
+     },
+     "height": {
+      "type": "number",
+      "format": "float",
+      "minimum": 0,
+      "maximum": 999999,
+      "description": "The height of the product in millimeters (mm). Up to two decimals."
+     },
+     "weight": {
+      "type": "number",
+      "format": "float",
+      "minimum": 0,
+      "maximum": 999999,
+      "description": "The weight of the product in grams (g). Up to two decimals."
+     }
+    }
+   },
+   "OrderReadFilter": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/Pagination"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4294967295,
+        "description": "Only the order with this value."
+       },
+       "status": {
+        "description": "Only orders with the specified status. Single value or list. 1 = New, 2 = In progress, 3 = Prepared, 4 = Finalized, 0 = Canceled, 5 = Returned",
+        "oneOf": [
+         {
+          "type": "integer",
+          "enum": [
+           0,
+           1,
+           2,
+           3,
+           4,
+           5
+          ]
+         },
+         {
+          "type": "array",
+          "items": {
+           "type": "integer",
+           "enum": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+           ]
+          }
+         }
+        ]
+       },
+       "createdBefore": {
+        "type": "string",
+        "description": "Only orders created before the specified date. Can only be set if createdAfter is present. Maximum 1 month difference. Format: YYYY-mm-dd HH:ii:ss"
+       },
+       "createdAfter": {
+        "type": "string",
+        "description": "Only orders created after the specified date. Format: YYYY-mm-dd HH:ii:ss. Note: on order/count it can only be set if createdBefore is present (maximum 1 month difference); on order/read it can be used standalone."
+       },
+       "modifiedBefore": {
+        "type": "string",
+        "description": "Only orders modified before the specified date. Can only be set if modifiedAfter is present. Maximum 1 month difference. Format: YYYY-mm-dd HH:ii:ss"
+       },
+       "modifiedAfter": {
+        "type": "string",
+        "description": "Only orders modified after the specified date. Format: YYYY-mm-dd HH:ii:ss. Note: on order/count it can only be set if modifiedBefore is present (maximum 1 month difference); on order/read it can be used standalone."
+       },
+       "payment_mode_id": {
+        "description": "Only orders with the specified payment method id. Single value or list. 1 = COD, 2 = bank transfer, 3 = online card payment",
+        "oneOf": [
+         {
+          "type": "integer"
+         },
+         {
+          "type": "array",
+          "items": {
+           "type": "integer"
+          }
+         }
+        ]
+       },
+       "is_complete": {
+        "type": "integer",
+        "enum": [
+         0,
+         1
+        ],
+        "description": "Order completion status. 1 = complete orders, 0 = incomplete orders"
+       },
+       "type": {
+        "type": "integer",
+        "enum": [
+         2,
+         3
+        ],
+        "default": 3,
+        "description": "Order type. 2 = fulfilled by eMAG, 3 = fulfilled by seller. Default value on /order/read is 3."
+       }
+      }
+     }
+    ]
+   },
+   "OrderSave": {
+    "type": "object",
+    "required": [
+     "id",
+     "status",
+     "type",
+     "payment_mode_id"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "The number that uniquely identifies an order."
+     },
+     "status": {
+      "type": "integer",
+      "enum": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5
+      ],
+      "description": "Order status: 1 = New, 2 = In progress, 3 = Prepared, 4 = Finalized, 0 = Canceled, 5 = Returned"
+     },
+     "is_complete": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "Order completion flag: 0 = incomplete, 1 = complete"
+     },
+     "type": {
+      "type": "integer",
+      "enum": [
+       2,
+       3
+      ],
+      "description": "Order type. 2 = fulfilled by eMAG, 3 = fulfilled by seller. Required starting August 2025. Only orders with type 3 can be edited; on type 2 only attachment upload is allowed."
+     },
+     "payment_mode_id": {
+      "type": "integer",
+      "enum": [
+       1,
+       2,
+       3
+      ],
+      "description": "Order payment method. 1 = COD (cash on delivery), 2 = bank transfer, 3 = online card payment"
+     },
+     "detailed_payment_method": {
+      "type": "string",
+      "description": "Detailed order payment method (e.g. \"eCREDIT\")."
+     },
+     "delivery_mode": {
+      "type": "string",
+      "enum": [
+       "courier",
+       "pickup"
+      ],
+      "description": "Order delivery method. courier = home delivery, pickup = locker delivery"
+     },
+     "details": {
+      "$ref": "#/components/schemas/OrderDetails"
+     },
+     "date": {
+      "type": "string",
+      "description": "Cart submission timestamp. Format: YYYY-mm-dd HH:ii:ss"
+     },
+     "modified": {
+      "type": "string",
+      "description": "Timestamp of the last update on the order. Format: YYYY-mm-dd HH:ii:ss"
+     },
+     "payment_status": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "Payment status. 0 = not paid, 1 = paid. For COD, stays 0 until the cashed amount is received by eMAG."
+     },
+     "cashed_co": {
+      "type": "integer",
+      "description": "The cashed amount from Card Online payment."
+     },
+     "cashed_cod": {
+      "type": "integer",
+      "description": "The cashed amount from Cash on Delivery payment."
+     },
+     "shipping_tax": {
+      "type": "number",
+      "format": "float",
+      "description": "The shipment tax value."
+     },
+     "shipping_tax_voucher_split": {
+      "type": "array",
+      "description": "List of voucher discounts distribution on shipping tax level.",
+      "items": {
+       "$ref": "#/components/schemas/ShippingTaxVoucherSplit"
+      }
+     },
+     "products": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/OrderProduct"
+      }
+     },
+     "customer": {
+      "$ref": "#/components/schemas/OrderCustomer"
+     },
+     "attachments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/OrderAttachment"
+      }
+     },
+     "vouchers": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/OrderVoucher"
+      }
+     },
+     "is_storno": {
+      "type": "boolean",
+      "description": "Mandatory when products are returned for a finalized order. True indicates partial storno."
+     },
+     "enforced_vendor_courier_accounts": {
+      "type": "array",
+      "description": "List of mandatory courier accounts that must be used in AWB issuing.\nIf null, you may use any of your available couriers.\nIf non-empty, you must use one of the listed couriers.\nIf empty array, you cannot issue AWB from MKTP.\n",
+      "items": {}
+     },
+     "reason_cancellation": {
+      "type": "integer",
+      "enum": [
+       1,
+       2,
+       3,
+       15,
+       16,
+       17,
+       18,
+       19,
+       20,
+       21,
+       22,
+       23,
+       24,
+       25,
+       26,
+       27,
+       28,
+       29,
+       30,
+       31,
+       32,
+       33,
+       34,
+       35,
+       36,
+       37,
+       38,
+       39,
+       40,
+       41,
+       42,
+       43
+      ],
+      "description": "Order cancellation reason. Values: 1 = Out of stock, 2 = Cancelled by the client, 3 = Client cannot be contacted,\n15 = Courier delivery term too large, 16 = Transport tax too large, 17 = Large delivery term until product arrives in warehouse,\n18 = Better offer in another store, 19 = Payment order not paid, 20 = Undelivered order — courier reasons, 21 = Others,\n22 = Order Incomplete — automatic cancellation, 23 = Customer changed their mind, 24 = By customer request, 25 = Failed delivery,\n26 = Late shipment, 27 = Irrelevant Order, 28 = Canceled by SuperAdmin on seller request, 29 = Blacklisted customer,\n30 = No VAT invoice, 31 = eMAG Marketplace partner requested cancellation, 32 = Delivery estimate too long,\n33 = Product no longer available in partner stock, 34 = Other reasons, 35 = Delivery too expensive,\n36 = Customer found a better price elsewhere, 37 = Customer registered another eMAG order with a similar product,\n38 = Customer changed their mind (does not need product),\n39 = Customer can purchase only by instalments, 40 = Other reasons EIS, 41 = Out of stock — instalments,\n42 = Product no longer available in partner stock — instalments, 43 = Delivery estimate too long.\n"
+     }
+    }
+   },
+   "OrderDetails": {
+    "type": "object",
+    "description": "Additional order details (locker / pickup point metadata).",
+    "properties": {
+     "locker_id": {
+      "type": "string",
+      "description": "Pickup point id, if locker delivery was selected."
+     },
+     "locker_name": {
+      "type": "string",
+      "description": "Pickup point name, if locker delivery was selected."
+     },
+     "locker_delivery_eligible": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "Indicates if the order would fit into a locker. 0 = not eligible, 1 = eligible"
+     },
+     "courier_external_office_id": {
+      "type": "string",
+      "description": "ID of the delivery point chosen by the customer in the courier's internal system. Used only by sellers in the Door2Door China project."
+     }
+    }
+   },
+   "ShippingTaxVoucherSplit": {
+    "type": "object",
+    "description": "Voucher discount distribution at shipping-tax level.",
+    "properties": {
+     "voucher_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999999,
+      "description": "The ID of the voucher discount."
+     },
+     "value": {
+      "type": "number",
+      "description": "The value of the discount, without VAT. Negative value."
+     },
+     "vat_value": {
+      "type": "number",
+      "description": "The value of the VAT. Negative value."
+     }
+    }
+   },
+   "OrderVoucher": {
+    "type": "object",
+    "description": "Voucher discount applied to the order.",
+    "properties": {
+     "voucher_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999999,
+      "description": "The ID of the voucher discount."
+     },
+     "modified": {
+      "type": "string",
+      "description": "Modified date of the voucher. Format: YYYY-mm-dd HH:ii:ss"
+     },
+     "created": {
+      "type": "string",
+      "description": "Created date of the voucher. Format: YYYY-mm-dd HH:ii:ss"
+     },
+     "status": {
+      "type": "integer",
+      "description": "Status of the voucher discount."
+     },
+     "sale_price_vat": {
+      "type": "number",
+      "description": "VAT value (negative)."
+     },
+     "sale_price": {
+      "type": "number",
+      "description": "Discount value without VAT (negative)."
+     },
+     "voucher_name": {
+      "type": "string",
+      "description": "Voucher name. Note: a voucher may be supported in a mixed way between eMAG/FD and seller, with different names — check at voucher split level."
+     },
+     "vat": {
+      "type": "number",
+      "description": "VAT rate."
+     },
+     "issue_date": {
+      "type": "string",
+      "description": "Date when the voucher was issued. Format: YYYY-mm-dd"
+     }
+    }
+   },
+   "OrderProduct": {
+    "type": "object",
+    "required": [
+     "id",
+     "quantity",
+     "sale_price",
+     "status"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999999,
+      "description": "eMAG internal order product line id. Any update on order product lines must use this id."
+     },
+     "product_id": {
+      "type": "integer",
+      "description": "Seller internal product id. Primary key for identifying a product offer. Important: cannot be changed on api-3/order/save."
+     },
+     "product_voucher_split": {
+      "type": "array",
+      "description": "List of voucher discounts distribution on product level. Note that multiple vouchers with different VAT rates may apply on a product — always read all voucher parameters.",
+      "items": {
+       "$ref": "#/components/schemas/ProductVoucherSplit"
+      }
+     },
+     "status": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "Status of the product in the order. 0 = cancelled, 1 = active"
+     },
+     "part_number": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 25,
+      "description": "Manufacturer unique identifier for the product. Corresponds to the PNK.\nImportant: spaces, comma and semicolon are automatically stripped.\nCannot be changed on api-3/order/save.\n"
+     },
+     "ext_part_number": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 25,
+      "description": "Seller's unique identifier for the product. Coincides with part_number if the seller owns the product documentation.\nImportant: spaces, comma and semicolon are automatically stripped.\nCannot be changed on api-3/order/save.\n"
+     },
+     "created": {
+      "type": "string",
+      "description": "Date when the order product line was created. Format: YYYY-mm-dd HH:ii:ss"
+     },
+     "modified": {
+      "type": "string",
+      "description": "Date when the order product line was last modified. Format: YYYY-mm-dd HH:ii:ss"
+     },
+     "currency": {
+      "type": "string",
+      "description": "Product price currency. If not sent, the default official currency at that moment will be used. Possible values: eMAG & FD RO: RON, eMAG & FD BG: EUR (starting 1 Jan 2026), eMAG HU: HUF"
+     },
+     "quantity": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Product quantity. Positive, different than 0 on regular saves.\nException: quantity = 0 is valid (and returned) in the partial storno\nflow — reducing a product's quantity on a finalized (status 4) order\nwith is_storno. Negative quantities are rejected.\n"
+     },
+     "sale_price": {
+      "type": "number",
+      "format": "float",
+      "description": "The sale price without VAT."
+     },
+     "name": {
+      "type": "string",
+      "description": "Product name. Sent together with product id, status, sale price and currency when adding a new product to an existing order."
+     },
+     "details": {
+      "type": "string",
+      "description": "Additional product notes."
+     },
+     "recycle_warranties": {
+      "type": "array",
+      "description": "Recycle warranties applied on the product (e.g. SGR taxes for plastic, metal, glass).",
+      "items": {
+       "$ref": "#/components/schemas/RecycleWarranty"
+      }
+     },
+     "serial_numbers": {
+      "type": "string",
+      "description": "Serial number (IMEI) of the product. If multiple pieces with IMEI exist, multiple codes will be present."
+     },
+     "campaign": {
+      "type": "object",
+      "description": "The campaign the product was ordered from. Returned on order/read at product level.",
+      "properties": {
+       "id": {
+        "type": "integer",
+        "description": "eMAG internal campaign ID.",
+        "example": 243409
+       },
+       "name": {
+        "type": "string",
+        "description": "eMAG internal campaign name.",
+        "example": "Test campaign"
+       }
+      }
+     }
+    }
+   },
+   "ProductVoucherSplit": {
+    "type": "object",
+    "description": "Voucher discount distribution at product level.",
+    "properties": {
+     "voucher_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999999,
+      "description": "The ID of the voucher discount."
+     },
+     "value": {
+      "type": "number",
+      "description": "The value of the discount, without VAT. Negative value."
+     },
+     "vat_value": {
+      "type": "number",
+      "description": "The value of the VAT. Negative value."
+     },
+     "vat": {
+      "type": "number",
+      "description": "The VAT rate."
+     },
+     "offered_by": {
+      "type": "string",
+      "description": "Who supports the voucher — eMAG or seller."
+     },
+     "voucher_name": {
+      "type": "string",
+      "description": "The name of the voucher."
+     }
+    }
+   },
+   "RecycleWarranty": {
+    "type": "object",
+    "description": "Recycle warranty entry (e.g. SGR tax) on an order product.",
+    "properties": {
+     "quantity": {
+      "type": "integer",
+      "description": "Warranty quantity."
+     },
+     "sale_price": {
+      "type": "number",
+      "description": "The sale price without VAT."
+     },
+     "vat_rate": {
+      "type": "integer",
+      "description": "The rate of the VAT."
+     },
+     "product_name": {
+      "type": "string",
+      "description": "The name of the recycle warranty (e.g. \"Taxa SGR metal\" — plastic, metal, glass)."
+     },
+     "recycle_warranty_voucher_split": {
+      "type": "array",
+      "description": "Voucher discounts distribution at recycle warranty level.",
+      "items": {
+       "$ref": "#/components/schemas/RecycleWarrantyVoucherSplit"
+      }
+     }
+    }
+   },
+   "RecycleWarrantyVoucherSplit": {
+    "type": "object",
+    "description": "Voucher discount distribution at recycle-warranty level.",
+    "properties": {
+     "voucher_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999999,
+      "description": "The ID of the voucher discount."
+     },
+     "value": {
+      "type": "number",
+      "description": "The value of the discount, without VAT. Negative value."
+     },
+     "vat_value": {
+      "type": "number",
+      "description": "The value of the VAT. Negative value."
+     }
+    }
+   },
+   "OrderCustomer": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "The number that uniquely identifies a customer"
+     },
+     "name": {
+      "type": "string",
+      "description": "The customer's name"
+     },
+     "email": {
+      "type": "string",
+      "description": "Hash that uniquely identifies the customer's email"
+     },
+     "company": {
+      "type": "string",
+      "description": "The name of the company"
+     },
+     "gender": {
+      "type": "string",
+      "enum": [
+       "M",
+       "F"
+      ],
+      "description": "The customer gender"
+     },
+     "code": {
+      "type": "string",
+      "description": "The company registration code"
+     },
+     "registration_number": {
+      "type": "string",
+      "description": "The company registration number"
+     },
+     "bank": {
+      "type": "string",
+      "description": "The bank name"
+     },
+     "iban": {
+      "type": "string",
+      "description": "The bank account"
+     },
+     "fax": {
+      "type": "string",
+      "description": "The customer's fax number"
+     },
+     "legal_entity": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "0 = private entity, 1 = legal entity"
+     },
+     "is_vat_payer": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "0 = not vat payer, 1 = vat payer"
+     },
+     "phone_1": {
+      "type": "string",
+      "description": "The customer's first phone number"
+     },
+     "phone_2": {
+      "type": "string",
+      "description": "The customer's second phone number"
+     },
+     "phone_3": {
+      "type": "string",
+      "description": "The customer's third phone number"
+     },
+     "billing_name": {
+      "type": "string",
+      "description": "The customer's invoice name"
+     },
+     "billing_phone": {
+      "type": "string",
+      "description": "The customer's invoice phone"
+     },
+     "billing_country": {
+      "type": "string",
+      "description": "The customer's invoice country"
+     },
+     "billing_suburb": {
+      "type": "string",
+      "description": "The customer's invoice county"
+     },
+     "billing_city": {
+      "type": "string",
+      "description": "The customer's invoice city"
+     },
+     "billing_locality_id": {
+      "type": "string",
+      "description": "The customer's invoice locality id"
+     },
+     "billing_street": {
+      "type": "string",
+      "description": "The customer's invoice address"
+     },
+     "billing_postal_code": {
+      "type": "string",
+      "description": "The customer's invoice postal code"
+     },
+     "shipping_locality_id": {
+      "type": "string",
+      "description": "The shipping locality id"
+     },
+     "shipping_contact": {
+      "type": "string",
+      "description": "The name of the contact person that will pick up the parcel"
+     },
+     "shipping_phone": {
+      "type": "string",
+      "description": "The phone used by the courier to contact the shipping person"
+     }
+    }
+   },
+   "OrderAttachment": {
+    "type": "object",
+    "required": [
+     "order_type",
+     "url"
+    ],
+    "properties": {
+     "order_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "The number that uniquely identifies an order. Required for invoices."
+     },
+     "order_type": {
+      "type": "integer",
+      "enum": [
+       2,
+       3
+      ],
+      "description": "2 = fulfilled by eMAG, 3 = fulfilled by seller"
+     },
+     "order_product_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "The number that uniquely identifies a product. Required for warranties. Same value as products.id from api-3/order/read."
+     },
+     "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "description": "The name of the attachment displayed to the customer"
+     },
+     "url": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Attachment URL. Valid URL to document. Only .pdf files are accepted."
+     },
+     "type": {
+      "type": "integer",
+      "enum": [
+       1,
+       3,
+       4,
+       8,
+       10,
+       11
+      ],
+      "default": 1,
+      "description": "1 = invoice, 3 = warranty, 4 = user manual, 8 = user guide, 10 = AWB, 11 = proforma"
+     },
+     "force_download": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "default": 0,
+      "description": "Flag used to force attachment download restrictions. 0 = default, 1 = force download"
+     }
+    }
+   },
+   "AWBSave": {
+    "type": "object",
+    "required": [
+     "order_id",
+     "sender",
+     "receiver",
+     "is_oversize",
+     "envelope_number",
+     "parcel_number",
+     "cod"
+    ],
+    "properties": {
+     "order_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "Identifies the order. Must be a valid order in the eMAG database, owned by the seller."
+     },
+     "rma_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "Identifies the return request. Must be a valid return request in the eMAG database, owned by the seller."
+     },
+     "sender": {
+      "$ref": "#/components/schemas/AWBParticipant"
+     },
+     "receiver": {
+      "$ref": "#/components/schemas/AWBParticipant"
+     },
+     "locker_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "description": "Pickup point id. Should be filled with the pickup point id received on the order. If filled, the courier delivers the parcel to the designated locker."
+     },
+     "is_oversize": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "If set to 1, marks the delivery as containing oversized products."
+     },
+     "insured_value": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 999999999,
+      "description": "The insured value."
+     },
+     "weight": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 99999,
+      "description": "Weight of the delivery (kilograms). Must equal the sum of weights on the `packages` key.\nIf `packages` is not provided and multiple envelopes/parcels exist, this value is divided equally between them.\n"
+     },
+     "envelope_number": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9999,
+      "description": "Number of envelopes to be delivered. If `parcel_number` is 0, this cannot be 0."
+     },
+     "parcel_number": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 999,
+      "description": "Number of parcels to be delivered. If `envelope_number` is 0, this cannot be 0."
+     },
+     "observation": {
+      "type": "string",
+      "maxLength": 255,
+      "description": "Observation text."
+     },
+     "cod": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 999999999,
+      "description": "Cash on delivery."
+     },
+     "courier_account_id": {
+      "type": "integer",
+      "description": "Unique identifier for seller's courier account. If not provided, a default account will be used."
+     },
+     "pickup_and_return": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "If set to 1, sender expects something in return to this expedition (documents, buy-back products, etc.). For an AWB belonging to a return must be 0 or not sent."
+     },
+     "saturday_delivery": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "If set to 1, sender requests Saturday delivery."
+     },
+     "sameday_delivery": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "If set to 1, sender requests same-day delivery."
+     },
+     "dropoff_locker": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "If set to 1, AWB is issued without a courier pickup request — used only for orders.\nIf set to 0 or not provided, the courier will pick up the order from your warehouse.\n"
+     },
+     "unboxing": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "If set to 1, AWB is issued with the \"Open on delivery\" option for the customer.\nOnly honored for sellers granted control on this field by the Marketplace team.\n"
+     },
+     "date": {
+      "type": "string",
+      "description": "Required for AWBs belonging to returns. Must be at least the next day of the AWB issuing."
+     },
+     "currency": {
+      "type": "string",
+      "enum": [
+       "RON",
+       "EUR",
+       "HUF"
+      ],
+      "description": "Currency of `cod` and `insured_value`. If not sent, the default official currency is used and a warning is returned. eMAG & FD RO: RON, eMAG & FD BG: EUR (starting 1 Jan 2026), eMAG HU: HUF"
+     },
+     "packages": {
+      "type": "array",
+      "description": "Per-package dimensions. Optional — if not provided, values prefilled in the AWB issuing modal are used. If provided, all four sub-keys are required.",
+      "items": {
+       "$ref": "#/components/schemas/AWBSavePackage"
+      }
+     },
+     "save_volumetric_awb_data": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "If set to 1, sender requests that volumetric data provided in `packages` is saved.\nUsed only for order AWBs. Restrictions: only for orders having 1 product with quantity 1 and 1 parcel/envelope.\n"
+     }
+    }
+   },
+   "AWBParticipant": {
+    "type": "object",
+    "description": "AWB sender (S) or receiver (R).",
+    "required": [
+     "name",
+     "contact",
+     "phone1",
+     "locality_id",
+     "street"
+    ],
+    "properties": {
+     "name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "description": "S/R's name."
+     },
+     "contact": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "Contact person name."
+     },
+     "phone1": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 12,
+      "pattern": "^\\+?[0-9]{8,11}$",
+      "description": "S/R first phone number. 8–11 digits; only `+` allowed at the start."
+     },
+     "phone2": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 12,
+      "pattern": "^\\+?[0-9]{8,11}$",
+      "description": "S/R second phone number. 8–11 digits; only `+` allowed at the start."
+     },
+     "legal_entity": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "Only applicable to receiver. 0 = not legal entity, 1 = legal entity."
+     },
+     "address_id": {
+      "type": "string",
+      "maxLength": 21,
+      "description": "The id of your address (seller address).\nIf sent on S (for orders) or R (for returns), the saved account address is used regardless of the other address fields sent.\n"
+     },
+     "locality_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "S/R's locality_id. Must be a valid locality in the eMAG database."
+     },
+     "street": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "description": "S/R's street."
+     },
+     "zipcode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "S/R's zipcode."
+     }
+    }
+   },
+   "AWBSavePackage": {
+    "type": "object",
+    "required": [
+     "weight",
+     "length",
+     "width",
+     "height"
+    ],
+    "properties": {
+     "weight": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 99999,
+      "description": "Package weight in kilograms."
+     },
+     "length": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 99999,
+      "description": "Package length in centimeters."
+     },
+     "width": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 99999,
+      "description": "Package width in centimeters."
+     },
+     "height": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 99999,
+      "description": "Package height in centimeters."
+     }
+    }
+   },
+   "AWBPackage": {
+    "type": "object",
+    "required": [
+     "length",
+     "width",
+     "height",
+     "weight"
+    ],
+    "properties": {
+     "label": {
+      "type": "string",
+      "minLength": 0,
+      "maxLength": 5,
+      "description": "Package dimension label (e.g. XS, S, M, L, XL).\nRequired at edit. Not editable after creation.\n"
+     },
+     "length": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 99999,
+      "description": "Package length in centimeters"
+     },
+     "width": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 99999,
+      "description": "Package width in centimeters"
+     },
+     "height": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 99999,
+      "description": "Package height in centimeters"
+     },
+     "weight": {
+      "type": "number",
+      "format": "double",
+      "minimum": 0,
+      "maximum": 99999,
+      "description": "Package weight in kilograms"
+     },
+     "is_default": {
+      "type": "boolean",
+      "description": "true = default package; false = non-default. Required at edit. When\npromoting a new default, the previous default automatically becomes false.\n"
+     }
+    }
+   },
+   "OrderVolumetryReadFilter": {
+    "type": "object",
+    "required": [
+     "order_id"
+    ],
+    "properties": {
+     "order_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "Order id. Must be a valid order owned by the seller."
+     },
+     "type": {
+      "type": "integer",
+      "enum": [
+       2,
+       3
+      ],
+      "description": "Order type filter. 2 = fulfilled by eMAG, 3 = fulfilled by seller.\nIf not provided, only non-FBE orders are returned.\n"
+     },
+     "product_id": {
+      "type": "integer",
+      "description": "Seller internal product id. If not provided, all products on the\norder are returned.\n"
+     }
+    }
+   },
+   "RMAReadFilter": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/Pagination"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer",
+        "description": "Seller internal return request ID"
+       },
+       "emag_id": {
+        "type": "integer",
+        "description": "eMAG return request ID"
+       },
+       "order_id": {
+        "type": "integer",
+        "description": "Order on which the product to be returned was included"
+       },
+       "product_id": {
+        "type": "integer",
+        "description": "Seller internal returned product ID"
+       },
+       "product_emag_id": {
+        "type": "integer",
+        "description": "eMAG returned product ID"
+       },
+       "request_status": {
+        "type": "integer",
+        "enum": [
+         1,
+         2,
+         3,
+         4,
+         5,
+         6,
+         7
+        ],
+        "description": "1 = Incomplete, 2 = New, 3 = Acknowledged, 4 = Refused, 5 = Canceled, 6 = Received, 7 = Finalized"
+       },
+       "date_start": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Only returns placed starting with the mentioned date. Format: YYYY-mm-dd HH:ii:ss"
+       },
+       "date_end": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Only returns placed before the mentioned date. Format: YYYY-mm-dd HH:ii:ss"
+       },
+       "type": {
+        "type": "integer",
+        "enum": [
+         2,
+         3
+        ],
+        "description": "2 = fulfilled by eMAG, 3 = fulfilled by seller"
+       }
+      }
+     }
+    ]
+   },
+   "RMASave": {
+    "type": "object",
+    "required": [
+     "emag_id",
+     "order_id",
+     "type",
+     "customer_name",
+     "customer_phone",
+     "pickup_locality_id",
+     "pickup_method",
+     "return_type",
+     "return_reason",
+     "date"
+    ],
+    "properties": {
+     "emag_id": {
+      "type": "integer",
+      "format": "int64",
+      "description": "Return request eMAG system ID."
+     },
+     "id": {
+      "type": "integer",
+      "format": "int64",
+      "description": "Seller internal return request ID."
+     },
+     "order_id": {
+      "type": "integer",
+      "format": "int64",
+      "description": "The id of the order in which the product to be returned was included."
+     },
+     "type": {
+      "type": "integer",
+      "enum": [
+       2,
+       3
+      ],
+      "description": "RMA type. 2 = fulfilled by eMAG, 3 = fulfilled by seller."
+     },
+     "invoice_number": {
+      "type": "string",
+      "description": "Invoice of the order in which the product to be returned was included."
+     },
+     "customer_name": {
+      "type": "string",
+      "description": "Customer name."
+     },
+     "customer_company": {
+      "type": "string",
+      "description": "Customer company info."
+     },
+     "customer_phone": {
+      "type": "string",
+      "description": "Customer phone number."
+     },
+     "products": {
+      "type": "array",
+      "description": "Products in the return request. Each entry's own required keys are documented on the RMAProduct schema.",
+      "items": {
+       "$ref": "#/components/schemas/RMAProduct"
+      }
+     },
+     "awbs": {
+      "type": "array",
+      "description": "Issued AWBs for this return request.",
+      "items": {
+       "$ref": "#/components/schemas/RMAAWB"
+      }
+     },
+     "pickup_locality_id": {
+      "type": "integer",
+      "description": "The internal eMAG ID of the pickup address city/locality."
+     },
+     "pickup_method": {
+      "type": "integer",
+      "enum": [
+       1,
+       2,
+       3
+      ],
+      "description": "Product pickup method selected by the customer. 1 = eMAG courier, 2 = Seller's own courier, 3 = Sent by client."
+     },
+     "return_reason": {
+      "type": "integer",
+      "description": "Return reason selected by the customer. IDs are listed in the per-country attachments (return_reasons_RO.xlsx, return_reasons_BG.xlsx, return_reasons_HU.xlsx).\nIf a return reason has higher-level reasons, send only the last-level ID from the hierarchy.\n"
+     },
+     "observations": {
+      "type": "string",
+      "description": "Free text notes field. May be optional or mandatory depending on the chosen return reason (per the return_reasons_* attachments)."
+     },
+     "return_type": {
+      "type": "integer",
+      "enum": [
+       1,
+       2,
+       3,
+       4,
+       5
+      ],
+      "description": "Return type selected by the customer. 1 = Replacement with same product, 2 = Replacement with a different product, 3 = Refund, 4 = Cancel payment contract for this product, 5 = Voucher."
+     },
+     "return_address_id": {
+      "type": "integer",
+      "description": "The id of the return address selected by the vendor in RMA UI. Defaults to the address marked default on the vendor profile."
+     },
+     "return_tax_value": {
+      "type": "number",
+      "format": "float",
+      "description": "Shipping tax for returned products (VAT included). Currency uses the platform default."
+     },
+     "customer_account_iban": {
+      "type": "string",
+      "description": "Customer account IBAN."
+     },
+     "customer_account_bank": {
+      "type": "string",
+      "description": "Customer account bank."
+     },
+     "customer_account_beneficiary": {
+      "type": "string",
+      "description": "Customer account beneficiary."
+     },
+     "replacement_product_emag_id": {
+      "type": "integer",
+      "description": "The eMAG ID of the replacement product."
+     },
+     "replacement_product_id": {
+      "type": "integer",
+      "description": "The seller internal ID of the replacement product."
+     },
+     "replacement_product_name": {
+      "type": "string",
+      "description": "Replacement product name."
+     },
+     "replacement_product_quantity": {
+      "type": "integer",
+      "description": "Replacement product quantity."
+     },
+     "date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RMA request insertion date."
+     },
+     "request_status": {
+      "type": "integer",
+      "enum": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      "description": "1 = Incomplete, 2 = New, 3 = Acknowledged, 4 = Refused, 5 = Canceled, 6 = Received, 7 = Finalized"
+     },
+     "currency": {
+      "type": "string",
+      "enum": [
+       "RON",
+       "EUR",
+       "HUF"
+      ],
+      "description": "Currency of return_tax_value and retained_amount. If not sent, the default official currency at that moment is used and a warning is returned. eMAG & FD RO: RON, eMAG & FD BG: EUR (starting 1 Jan 2026), eMAG HU: HUF"
+     }
+    }
+   },
+   "RMAProduct": {
+    "type": "object",
+    "required": [
+     "id",
+     "product_id",
+     "quantity",
+     "product_name",
+     "return_reason"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999999,
+      "description": "eMAG internal return product line id. Any update on return product lines must use this id."
+     },
+     "product_emag_id": {
+      "type": "integer",
+      "description": "Product to be returned eMAG ID."
+     },
+     "product_id": {
+      "type": "integer",
+      "description": "Product to be returned seller internal ID."
+     },
+     "quantity": {
+      "type": "integer",
+      "description": "Product quantity."
+     },
+     "product_name": {
+      "type": "string",
+      "description": "Product name."
+     },
+     "return_reason": {
+      "type": "integer",
+      "description": "Return reason selected by the customer (IDs in return_reasons_RO.xlsx, return_reasons_BG.xlsx, return_reasons_HU.xlsx).\nIf a return reason has higher-level reasons, send only the last-level ID from the hierarchy.\n"
+     },
+     "observations": {
+      "type": "string",
+      "description": "Free text notes field. Optional or required depending on the chosen return reason (per the return_reasons_* attachments)."
+     },
+     "diagnostic": {
+      "type": "integer",
+      "description": "Diagnostic after product analysis."
+     },
+     "reject_reason": {
+      "type": "integer",
+      "description": "Reason of return rejection."
+     },
+     "refund_value": {
+      "type": "string",
+      "description": "Refund value."
+     }
+    }
+   },
+   "RMAAWB": {
+    "type": "object",
+    "description": "Issued AWB associated with an RMA.",
+    "required": [
+     "pickup_country",
+     "pickup_suburb",
+     "pickup_city",
+     "pickup_address"
+    ],
+    "properties": {
+     "reservation_id": {
+      "type": "integer",
+      "description": "eMAG internal AWB reservation id. Use this id to read an AWB."
+     },
+     "pickup_country": {
+      "type": "string"
+     },
+     "pickup_suburb": {
+      "type": "string"
+     },
+     "pickup_city": {
+      "type": "string"
+     },
+     "pickup_address": {
+      "type": "string"
+     },
+     "pickup_address_id": {
+      "type": "integer",
+      "description": "Id of address already saved on the customer's account."
+     },
+     "pickup_zipcode": {
+      "type": "string"
+     },
+     "pickup_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Returned product pickup date (in case of vendor pickup from customer)."
+     }
+    }
+   },
+   "CampaignReadFilter": {
+    "description": "Filters for /campaigns/read. Send them as top-level keys of the request body (not wrapped in a `data` key).",
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/Pagination"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "startDate": {
+        "type": "string",
+        "format": "date",
+        "description": "Returns the campaigns for the corresponding startDate.",
+        "example": "2026-01-01"
+       },
+       "endDate": {
+        "type": "string",
+        "format": "date",
+        "description": "Returns the campaigns for the corresponding endDate.",
+        "example": "2026-12-31"
+       },
+       "id": {
+        "type": "array",
+        "items": {
+         "type": "integer"
+        },
+        "description": "Returns the campaigns that match the corresponding ids.",
+        "example": [
+         99990029,
+         1000046
+        ]
+       },
+       "name": {
+        "type": "string",
+        "description": "Returns only the campaigns that match the name. Partial match.",
+        "example": "Genius"
+       },
+       "status": {
+        "type": "integer",
+        "enum": [
+         0,
+         1
+        ],
+        "description": "Returns only the campaigns with this status. 1 = active, 0 = inactive",
+        "example": 1
+       },
+       "campaignType": {
+        "type": "integer",
+        "enum": [
+         1,
+         2,
+         3,
+         4
+        ],
+        "description": "Returns the campaigns that match the corresponding campaign type. 1 = Black Friday (Black Friday campaign), 2 = Discount (discount-based campaign), 3 = Voucher (voucher-based campaign), 4 = Multi deals (Multiple Deals campaign)",
+        "example": 2
+       }
+      }
+     }
+    ]
+   },
+   "CampaignProposal": {
+    "type": "object",
+    "required": [
+     "id",
+     "sale_price",
+     "campaign_id"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16777215,
+      "description": "Seller internal product id. This is the primary key for identifying a product offer."
+     },
+     "sale_price": {
+      "type": "number",
+      "format": "float",
+      "minimum": 0,
+      "exclusiveMinimum": true,
+      "description": "Seller offer sale price without VAT available in the campaign. Up to four decimals."
+     },
+     "stock": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "description": "Available stock for the campaign. Once the stock has finished, the product can no longer be ordered."
+     },
+     "max_qty_per_order": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "description": "The maximum quantity that a customer can order for a product from the campaign. Optional; mandatory for stock-in-site campaigns."
+     },
+     "post_campaign_sale_price": {
+      "type": "number",
+      "format": "float",
+      "description": "Product price after campaign end. The automatically filled price is the sale price of the product from the moment when offers are downloaded. Up to four decimals."
+     },
+     "campaign_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16777215,
+      "description": "eMAG internal campaign ID in which the proposal will be uploaded"
+     },
+     "voucher_discount": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 100,
+      "description": "Value of the voucher discount proposed in campaign (percent). Minimum 10, maximum 100. Optional/Required depending on campaign type."
+     },
+     "not_available_post_campaign": {
+      "type": "integer",
+      "enum": [
+       0,
+       1
+      ],
+      "description": "If omitted, the offer remains valid after the campaign ends. 0 = the offer remains active and valid after the campaign ends, 1 = the offer is no longer active and valid after the campaign ends"
+     },
+     "date_intervals": {
+      "type": "array",
+      "maxItems": 30,
+      "description": "A list of date intervals for which different discounts apply during the campaign. Optional/Required depending on campaign type — required for MultiDeals campaigns.",
+      "items": {
+       "type": "object",
+       "description": "One discount interval. For MultiDeals campaigns, `start_date`, `end_date` (including their `date`), `voucher_discount` and `index` are required; `timezone_type` and `timezone` are optional.",
+       "properties": {
+        "start_date": {
+         "allOf": [
+          {
+           "$ref": "#/components/schemas/DateTimeObject"
+          }
+         ],
+         "description": "The start of the discount interval. Contains the full timestamp and timezone metadata. Required for MultiDeals campaigns (including its `date`)."
+        },
+        "end_date": {
+         "allOf": [
+          {
+           "$ref": "#/components/schemas/DateTimeObject"
+          }
+         ],
+         "description": "The end of the discount interval. Same structure as `start_date`. Required for MultiDeals campaigns (including its `date`)."
+        },
+        "voucher_discount": {
+         "type": "integer",
+         "description": "The discount percentage to be applied during this interval (e.g. 10 for 10%). Required for MultiDeals campaigns."
+        },
+        "index": {
+         "type": "integer",
+         "minimum": 1,
+         "maximum": 30,
+         "description": "Order of the interval. Must be unique and incremented (1, 2, 3, ...). The limit is 30. Required for MultiDeals campaigns."
+        }
+       }
+      }
+     }
+    }
+   },
+   "DateTimeObject": {
+    "type": "object",
+    "properties": {
+     "date": {
+      "type": "string",
+      "description": "Timestamp in YYYY-MM-DD HH:MM:SS.ssssss format (e.g. \"2025-04-22 23:59:59.000000\")",
+      "example": "2025-04-22 23:59:59.000000"
+     },
+     "timezone_type": {
+      "type": "integer",
+      "description": "Timezone type identifier (e.g. 3 for Europe/Bucharest)",
+      "example": 3
+     },
+     "timezone": {
+      "type": "string",
+      "description": "Timezone name string (e.g. \"Europe/Bucharest\")",
+      "example": "Europe/Bucharest"
+     }
+    }
+   }
+  }
+ }
+}

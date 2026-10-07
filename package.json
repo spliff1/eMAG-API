@@ -1,0 +1,13 @@
+{
+  "name": "dummy-emag",
+  "version": "1.0.0",
+  "description": "Dummy eMAG & FD Marketplace API (v4.5.2) for integration testing, with a web UI",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.16" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch --watch-path=src --watch-path=server.js server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test"
+  }
+}

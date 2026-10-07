@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>dummy-emag</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232563eb'/%3E%3Cpath d='M4 8h8M4 5h8M4 11h5' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="locked">
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-head">
+        <a class="brand" href="#/requests" aria-label="dummy-emag home"><span class="logo" aria-hidden="true"></span><span>dummy-emag</span></a>
+        <span class="live" id="live" title="Connecting..." role="status"><i></i><span>connecting</span></span>
+        <button class="icon-btn" id="themeBtn" type="button" aria-label="Toggle light/dark theme" title="Toggle theme"></button>
+        <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="sideBody"></button>
+      </div>
+      <div class="side-body" id="sideBody">
+        <nav id="nav" aria-label="Sections"></nav>
+        <div class="side-foot" id="sideFoot"></div>
+      </div>
+    </aside>
+    <main id="main" tabindex="-1"><p class="muted pad">Loading...</p></main>
+  </div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+  <noscript>This UI needs JavaScript.</noscript>
+</body>
+</html>
