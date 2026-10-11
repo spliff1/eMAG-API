@@ -130,7 +130,7 @@ export function saveProductOffer(app, v, { strict = true } = {}) {
 
   const vat = app.col('vat_rates').get(v.vat_id);
   if (!vat) errors.push(`${tag} vat_id: ${v.vat_id} is not a valid VAT id (see /vat/read)`);
-  else if (vat.status !== 'active' && strict) errors.push(`${tag} vat_id: ${v.vat_id} is inactive`);
+  else if (vat.status === 'inactive' && strict) errors.push(`${tag} vat_id: ${v.vat_id} is inactive`);
   if (v.recommended_price !== undefined && v.recommended_price <= v.sale_price) errors.push(`${tag} recommended_price: must be greater than sale_price`);
   const min = v.min_sale_price ?? existing?.min_sale_price;
   const max = v.max_sale_price ?? existing?.max_sale_price;

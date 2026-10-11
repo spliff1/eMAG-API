@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { createApp } from '../src/app.js';
 import { createHttpServer } from '../src/core/http.js';
+import { saveProductOffer } from '../src/modules/products/service.js';
 
 let app;
 let server;
@@ -86,6 +87,13 @@ test('product_offer/save: schema errors reject the item, valid ones are saved', 
   assert.equal(o.validation_status[0].value, 1);
   assert.equal(o.offer_validation_status.value, 1);
   assert.equal(o.general_stock, 10);
+});
+
+test('product_offer/save: VAT record without a status field (as returned by real /vat/read) is usable', () => {
+  app.col('vat_rates').insert({ vat_id: 5000, vat_rate: 0, is_default: null });
+  const base = { category_id: 41, name: 'Pantofi VAT', brand: 'Nike', status: 1, sale_price: 100, min_sale_price: 80, max_sale_price: 150, stock: [{ warehouse_id: 1, value: 1 }], handling_time: [{ warehouse_id: 1, value: 1 }], characteristics: [{ id: 1009, value: '42' }], images: [{ url: 'https://x.example.com/a.jpg', display_type: 1 }] };
+  assert.deepEqual(saveProductOffer(app, { ...base, id: 2101, part_number: 'PNVAT1', vat_id: 5000 }).errors, []);
+  assert.match(saveProductOffer(app, { ...base, id: 2102, part_number: 'PNVAT2', vat_id: 4 }).errors.join(), /inactive/);
 });
 
 test('product_offer/save: documentation error => isError true but offer is still saved (status 8 + doc_errors)', async () => {

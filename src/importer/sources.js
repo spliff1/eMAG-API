@@ -450,7 +450,7 @@ const localities = {
 };
 
 export const SOURCES = [
-  simple('vat', 'VAT rates', 'Real vat_id values (needed in every product save).', '/vat/read', 'vat_rates', (r) => ((r.vat_id ?? r.id) == null ? null : { ...r, vat_id: r.vat_id ?? r.id }), { defaultSelected: true, order: 10 }),
+  simple('vat', 'VAT rates', 'Real vat_id values (needed in every product save).', '/vat/read', 'vat_rates', (r) => ((r.vat_id ?? r.id) == null ? null : { ...r, vat_id: r.vat_id ?? r.id, status: r.status ?? 'active' }), { defaultSelected: true, order: 10 }),
   simple('handling_time', 'Handling time values', 'Allowed handling-time values.', '/handling_time/read', 'handling_times', (r, i) => ({ ...r, id: r.id ?? r.value ?? i }), { defaultSelected: true, order: 11 }),
   offers,
   categories,
